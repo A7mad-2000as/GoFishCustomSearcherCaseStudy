@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"math"
-	"strconv"
 	"time"
 
 	"github.com/A7mad-2000as/GoFish/chessEngine"
@@ -34,6 +33,7 @@ const (
 	SignularMoveExtensionAmount                 int8   = 1
 	LateMoveReductionLegalMoveLowerBound        int    = 4
 	LateMoveReductionDepthLowerBound            int8   = 3
+	drawScore                                   int16  = 0
 )
 
 var FutilityBoosts = [9]int16{0, 100, 160, 220, 280, 340, 400, 460, 520}
@@ -50,10 +50,9 @@ var MvvLvaScores [7][6]uint16 = [7][6]uint16{
 	{0, 0, 0, 0, 0, 0},
 }
 
-type DefaultSearcher struct {
-	timeManager                DefaultTimeManager
+type CustomSearcher struct {
+	timeManager                CustomTimeManager
 	position                   chessEngine.Position
-	transpositionTable         DefaultTranspositionTable
 	searchedNodes              uint64
 	positionHashHistory        [MaximumNumberOfPlies]uint64
 	positionHashHistoryCounter uint16
@@ -67,93 +66,49 @@ type DefaultSearcher struct {
 func InitializeLateMoveReductions() {
 	for depth := int8(3); depth < 100; depth++ {
 		for legalMovesCounted := int8(3); legalMovesCounted < 100; legalMovesCounted++ {
-			LateMoveReductions[depth][legalMovesCounted] = chessEngine.max(2, depth/4) + legalMovesCounted/12
+			LateMoveReductions[depth][legalMovesCounted] = max(2, depth/4) + legalMovesCounted/12
 		}
 	}
 }
 
-func (searcher *DefaultSearcher) GetOptions() map[string]chessEngine.EngineOption {
+func (searcher *CustomSearcher) GetOptions() map[string]chessEngine.EngineOption {
 	options := make(map[string]chessEngine.EngineOption)
-
-	options["Transposition Table Size"] = EngineOption{
-		optionType:   "spin",
-		defaultValue: "64",
-		minValue:     "1",
-		maxValue:     "32000",
-		setOption: func(sizeValue string) {
-			size, err := strconv.Atoi(sizeValue)
-			if err != nil {
-				searcher.transpositionTable.DeleteEntries()
-				searcher.transpositionTable.ResizeTable(uint64(size), chessEngine.EntrySize)
-			}
-		},
-	}
-
-	options["Clear Transposition Table"] = EngineOption{
-		optionType: "button",
-		setOption: func(_ string) {
-			searcher.transpositionTable.ClearEntries()
-		},
-	}
-
-	options["Clear Killer Moves"] = EngineOption{
-		optionType: "button",
-		setOption: func(_ string) {
-			searcher.ClearKillerMoves()
-		},
-	}
-
-	options["Clear Counter Moves"] = EngineOption{
-		optionType: "button",
-		setOption: func(_ string) {
-			searcher.ClearCounterMoves()
-		},
-	}
-
-	options["Clear History Heuristic Stats"] = EngineOption{
-		optionType: "button",
-		setOption: func(_ string) {
-			searcher.ClearHistoryHeuristicStats()
-		},
-	}
 
 	return options
 }
 
-func (searcher *DefaultSearcher) Reset(evaluator chessEngine.Evaluator) {
-	*searcher = DefaultSearcher{}
-	searcher.transpositionTable.ResizeTable(DefaultTableSize, chessEngine.EntrySize)
+func (searcher *CustomSearcher) Reset(evaluator chessEngine.Evaluator) {
+	*searcher = CustomSearcher{}
 	searcher.InitializeSearchInfo(chessEngine.FENStartPosition, evaluator)
 }
 
-func (searcher *DefaultSearcher) InitializeSearchInfo(fenString string, evaluator chessEngine.Evaluator) {
+func (searcher *CustomSearcher) InitializeSearchInfo(fenString string, evaluator chessEngine.Evaluator) {
 	searcher.position.LoadFEN(fenString, evaluator)
 	searcher.positionHashHistoryCounter = 0
 	searcher.positionHashHistory[searcher.positionHashHistoryCounter] = searcher.position.PositionHash
 	searcher.ageState = 0
 }
 
-func (searcher *DefaultSearcher) ResetToNewGame() {
-	searcher.transpositionTable.ClearEntries()
+func (searcher *CustomSearcher) ResetToNewGame() {
 	searcher.ClearKillerMoves()
 	searcher.ClearCounterMoves()
 	searcher.ClearHistoryHeuristicStats()
 }
 
-func (searcher *DefaultSearcher) Position() *chessEngine.Position {
+func (searcher *CustomSearcher) Position() *chessEngine.Position {
 	return &searcher.position
 }
 
-func (searcher *DefaultSearcher) RecordPositionHash(positionHash uint64) {
+func (searcher *CustomSearcher) RecordPositionHash(positionHash uint64) {
 	searcher.positionHashHistoryCounter++
 	searcher.positionHashHistory[searcher.positionHashHistoryCounter] = positionHash
 }
 
-func (searcher *DefaultSearcher) EraseLatestPositionHash() {
+func (searcher *CustomSearcher) EraseLatestPositionHash() {
 	searcher.positionHashHistoryCounter--
 }
 
-func (searcher *DefaultSearcher) ChangeKillerMoveSlot(ply uint8, killerMove chessEngine.Move) {
+func (searcher *CustomSearcher) ChangeKillerMoveSlot(ply uint8, killerMove chessEngine.Move) {
 	nonCapture := (searcher.position.SquareContent[killerMove.GetToSquare()].PieceType == chessEngine.NoneType)
 	if nonCapture {
 		if !killerMove.IsSameMove(searcher.killerMoves[ply][0]) {
@@ -163,14 +118,14 @@ func (searcher *DefaultSearcher) ChangeKillerMoveSlot(ply uint8, killerMove ches
 	}
 }
 
-func (searcher *DefaultSearcher) ClearKillerMoves() {
+func (searcher *CustomSearcher) ClearKillerMoves() {
 	for depth := 0; depth < chessEngine.MaxDepth+1; depth++ {
 		searcher.killerMoves[depth][0] = chessEngine.NullMove
 		searcher.killerMoves[depth][1] = chessEngine.NullMove
 	}
 }
 
-func (searcher *DefaultSearcher) ClearCounterMoves() {
+func (searcher *CustomSearcher) ClearCounterMoves() {
 	for sourceSquare := 0; sourceSquare < 64; sourceSquare++ {
 		for destinationSquare := 0; destinationSquare < 64; destinationSquare++ {
 			searcher.counterMoves[chessEngine.White][sourceSquare][destinationSquare] = chessEngine.NullMove
@@ -179,14 +134,14 @@ func (searcher *DefaultSearcher) ClearCounterMoves() {
 	}
 }
 
-func (searcher *DefaultSearcher) ChangeCounterMoveSlot(previousMove chessEngine.Move, counterMove chessEngine.Move) {
+func (searcher *CustomSearcher) ChangeCounterMoveSlot(previousMove chessEngine.Move, counterMove chessEngine.Move) {
 	nonCapture := (searcher.position.SquareContent[counterMove.GetToSquare()].PieceType == chessEngine.NoneType)
 	if nonCapture {
 		searcher.counterMoves[searcher.position.SideToMove][previousMove.GetFromSquare()][previousMove.GetToSquare()] = counterMove
 	}
 }
 
-func (searcher *DefaultSearcher) ClearHistoryHeuristicStats() {
+func (searcher *CustomSearcher) ClearHistoryHeuristicStats() {
 	for sourceSquare := 0; sourceSquare < 64; sourceSquare++ {
 		for destinationSquare := 0; destinationSquare < 64; destinationSquare++ {
 			searcher.historyHeuristicStats[searcher.position.SideToMove][sourceSquare][destinationSquare] = 0
@@ -194,7 +149,7 @@ func (searcher *DefaultSearcher) ClearHistoryHeuristicStats() {
 	}
 }
 
-func (searcher *DefaultSearcher) IncreaseMoveHistoryStrength(move chessEngine.Move, depth int8) {
+func (searcher *CustomSearcher) IncreaseMoveHistoryStrength(move chessEngine.Move, depth int8) {
 	nonCapture := (searcher.position.SquareContent[move.GetToSquare()].PieceType == chessEngine.NoneType)
 
 	if nonCapture {
@@ -207,7 +162,7 @@ func (searcher *DefaultSearcher) IncreaseMoveHistoryStrength(move chessEngine.Mo
 
 }
 
-func (searcher *DefaultSearcher) DecreaseMoveHistoryStrength(move chessEngine.Move) {
+func (searcher *CustomSearcher) DecreaseMoveHistoryStrength(move chessEngine.Move) {
 	nonCapture := (searcher.position.SquareContent[move.GetToSquare()].PieceType == chessEngine.NoneType)
 
 	if nonCapture && searcher.historyHeuristicStats[searcher.position.SideToMove][move.GetFromSquare()][move.GetToSquare()] > 0 {
@@ -215,7 +170,7 @@ func (searcher *DefaultSearcher) DecreaseMoveHistoryStrength(move chessEngine.Mo
 	}
 }
 
-func (searcher *DefaultSearcher) ReduceHistoryHeuristicScores() {
+func (searcher *CustomSearcher) ReduceHistoryHeuristicScores() {
 	for sourceSquare := 0; sourceSquare < 64; sourceSquare++ {
 		for destinationSquare := 0; destinationSquare < 64; destinationSquare++ {
 			searcher.historyHeuristicStats[searcher.position.SideToMove][sourceSquare][destinationSquare] /= 2
@@ -223,7 +178,7 @@ func (searcher *DefaultSearcher) ReduceHistoryHeuristicScores() {
 	}
 }
 
-func (searcher *DefaultSearcher) isThreeFoldRepetition() bool {
+func (searcher *CustomSearcher) isThreeFoldRepetition() bool {
 	for ply := uint16(0); ply < searcher.positionHashHistoryCounter; ply++ {
 		if searcher.positionHashHistory[ply] == searcher.position.PositionHash {
 			return true
@@ -232,15 +187,13 @@ func (searcher *DefaultSearcher) isThreeFoldRepetition() bool {
 	return false
 }
 
-func (searcher *DefaultSearcher) AssignScoresToMoves(moves *chessEngine.MoveList, pvFirstMove chessEngine.Move, depth uint8, previousMove chessEngine.Move) {
+func (searcher *CustomSearcher) AssignScoresToMoves(moves *chessEngine.MoveList, depth uint8, previousMove chessEngine.Move) {
 	for moveIndex := uint8(0); moveIndex < moves.Size; moveIndex++ {
 		move := &moves.Moves[moveIndex]
 		pieceToBeMoved := searcher.position.SquareContent[move.GetFromSquare()].PieceType
 		pieceToBeCaptured := searcher.position.SquareContent[move.GetToSquare()].PieceType
 
-		if move.IsSameMove(pvFirstMove) {
-			move.ModifyMoveScore(EssentialMovesOffset + PvMoveScore)
-		} else if pieceToBeCaptured != chessEngine.NoneType {
+		if pieceToBeCaptured != chessEngine.NoneType {
 			move.ModifyMoveScore(EssentialMovesOffset + MvvLvaScores[pieceToBeCaptured][pieceToBeMoved])
 		} else if move.IsSameMove(searcher.killerMoves[depth][0]) {
 			move.ModifyMoveScore(EssentialMovesOffset - KillerMoveFirstSlotScore)
@@ -276,7 +229,7 @@ func OrderHighestScoredMove(destinationIndex uint8, moves *chessEngine.MoveList)
 	moves.Moves[highestScoreIndex] = temp
 }
 
-func (searcher *DefaultSearcher) InitializeTimeManager(remainingTime int64, increment int64, moveTime int64, movesToGo int16, depth uint8, nodeCount uint64) {
+func (searcher *CustomSearcher) InitializeTimeManager(remainingTime int64, increment int64, moveTime int64, movesToGo int16, depth uint8, nodeCount uint64) {
 	searcher.timeManager.Initialize(remainingTime, increment, moveTime, movesToGo, depth, nodeCount)
 }
 
@@ -290,37 +243,37 @@ func getPresentableScore(nodeScore int16) string {
 	}
 }
 
-func (searcher *DefaultSearcher) StartSearch(evaluator Evaluator) Move {
-	bestMove := NullMove
-	pv := PV{}
+func (searcher *CustomSearcher) StartSearch(evaluator chessEngine.Evaluator) chessEngine.Move {
+	bestMove := chessEngine.NullMove
+	pv := chessEngine.PV{}
 	searcher.ageState ^= 1
 	searcher.sideToPlay = searcher.position.SideToMove
 	searcher.searchedNodes = 0
 	searchTime := int64(0)
 	aspirationWindowMissTimeExtension := false
-	alpha := -CheckmateScore
-	beta := CheckmateScore
+	alpha := -chessEngine.CheckmateScore
+	beta := chessEngine.CheckmateScore
 
 	searcher.ReduceHistoryHeuristicScores()
 	searcher.timeManager.StartMoveTimeAllocation(searcher.position.CurrentPly)
 
-	for depth := uint8(1); searcher.timeManager.nodeCount > 0 && depth <= MaxDepth && depth <= searcher.timeManager.depth; depth++ {
+	for depth := uint8(1); searcher.timeManager.nodeCount > 0 && depth <= chessEngine.MaxDepth && depth <= searcher.timeManager.depth; depth++ {
 		pv.DeleteVariation()
 
 		searchStartInstant := time.Now()
-		nodeScore := searcher.Negamax(evaluator, int8(depth), 0, alpha, beta, &pv, true, NullMove, NullMove, false)
+		nodeScore := searcher.Negamax(evaluator, int8(depth), 0, alpha, beta, &pv, true, chessEngine.NullMove, chessEngine.NullMove, false)
 		searchDuration := time.Since(searchStartInstant)
 
 		if searcher.timeManager.endSearch {
-			if bestMove == NullMove && depth == 1 {
+			if bestMove == chessEngine.NullMove && depth == 1 {
 				bestMove = pv.GetVariationFirstMove()
 			}
 			break
 		}
 
 		if nodeScore >= beta || nodeScore <= alpha { // Outside aspiration window
-			alpha = -CheckmateScore
-			beta = CheckmateScore
+			alpha = -chessEngine.CheckmateScore
+			beta = chessEngine.CheckmateScore
 			depth--
 
 			if depth >= AspirationWindowMissTimeExtensionLowerBound && !aspirationWindowMissTimeExtension {
@@ -342,14 +295,14 @@ func (searcher *DefaultSearcher) StartSearch(evaluator Evaluator) Move {
 	return bestMove
 }
 
-func (searcher *DefaultSearcher) StopSearch() {
+func (searcher *CustomSearcher) StopSearch() {
 	searcher.timeManager.endSearch = true
 }
 
-func (searcher *DefaultSearcher) Negamax(evaluator Evaluator, depth int8, ply uint8, alpha int16, beta int16, pv *PV, nullMovePruningRequired bool, previousMove Move, singularMoveExtensionMove Move, singularMoveExtendedSearch bool) int16 {
+func (searcher *CustomSearcher) Negamax(evaluator chessEngine.Evaluator, depth int8, ply uint8, alpha int16, beta int16, pv *chessEngine.PV, nullMovePruningRequired bool, previousMove chessEngine.Move, singularMoveExtensionMove chessEngine.Move, singularMoveExtendedSearch bool) int16 {
 	searcher.searchedNodes++
 
-	if ply >= MaxDepth {
+	if ply >= chessEngine.MaxDepth {
 		return evaluator.EvaluatePosition(&searcher.position)
 	}
 
@@ -368,9 +321,8 @@ func (searcher *DefaultSearcher) Negamax(evaluator Evaluator, depth int8, ply ui
 	onTreeRoot := (ply == 0)
 	inCheck := searcher.position.IsCurrentSideInCheck()
 	isCurrentNodePv := beta-alpha != 1
-	continuationPv := PV{}
+	continuationPv := chessEngine.PV{}
 	futilityPruningPossibility := false
-	transpositionTableHashMatch := false
 
 	if inCheck {
 		depth++
@@ -378,46 +330,18 @@ func (searcher *DefaultSearcher) Negamax(evaluator Evaluator, depth int8, ply ui
 
 	if depth <= 0 {
 		searcher.searchedNodes--
-		return searcher.QuiescenceSearch(evaluator, alpha, beta, ply, pv, ply)
+		return evaluator.EvaluatePosition(&searcher.position)
 	}
 
 	if !onTreeRoot && ((searcher.position.Rule50 >= 100 && !(inCheck && ply == 1)) || searcher.isThreeFoldRepetition()) {
 		return drawScore
 	}
 
-	transpostionTableMove := NullMove
-	transpostionTableEntry := searcher.transpositionTable.GetEntryToRead(searcher.position.PositionHash)
-	transpostionTableScore, transpositionTableScoreValid := transpostionTableEntry.ReadEntryInfo(&transpostionTableMove, searcher.position.PositionHash, ply, uint8(depth), alpha, beta)
-	transpositionTableHashMatch = transpostionTableEntry.HashValue == searcher.position.PositionHash
-
-	if transpositionTableScoreValid && !onTreeRoot && !singularMoveExtensionMove.IsSameMove(transpostionTableMove) {
-		return transpostionTableScore
-	}
-
-	if abs(beta) < MateThreshold && !inCheck && !isCurrentNodePv {
+	if abs(beta) < chessEngine.MateThreshold && !inCheck && !isCurrentNodePv {
 		currentPositionStaticEvaluation := evaluator.EvaluatePosition(&searcher.position)
 		penalizedEvaluation := currentPositionStaticEvaluation - StaticNullMovePruningPenalty*int16(depth)
 		if penalizedEvaluation >= beta {
 			return penalizedEvaluation
-		}
-	}
-
-	if nullMovePruningRequired && depth >= NullMovePruningDepthLimit && !searcher.position.HasNoMajorOrMinorPieces() && !inCheck && !isCurrentNodePv {
-		searcher.position.DoNullMove()
-		searcher.RecordPositionHash(searcher.position.PositionHash)
-
-		reductionAmount := 3 + depth/6
-		nullMovePruningScore := -searcher.Negamax(evaluator, depth-1-reductionAmount, ply+1, -beta, -beta+1, &continuationPv, false, NullMove, NullMove, singularMoveExtendedSearch)
-		searcher.EraseLatestPositionHash()
-		searcher.position.unDoPreviousNullMove()
-		continuationPv.DeleteVariation()
-
-		if searcher.timeManager.endSearch {
-			return 0
-		}
-
-		if nullMovePruningScore >= beta && abs(nullMovePruningScore) < MateThreshold {
-			return beta
 		}
 	}
 
@@ -426,34 +350,24 @@ func (searcher *DefaultSearcher) Negamax(evaluator Evaluator, depth int8, ply ui
 		boostedScore := currentPositionStaticEvaluation + FutilityBoosts[depth]*3
 
 		if boostedScore < alpha {
-			razoredScore := searcher.QuiescenceSearch(evaluator, alpha, beta, ply, &PV{}, 0)
+			razoredScore := evaluator.EvaluatePosition(&searcher.position)
 			if razoredScore < alpha {
 				return alpha
 			}
 		}
 	}
 
-	if depth <= FutilityPruningDepthUpperBound && alpha < MateThreshold && beta < MateThreshold && !inCheck && !isCurrentNodePv {
+	if depth <= FutilityPruningDepthUpperBound && alpha < chessEngine.MateThreshold && beta < chessEngine.MateThreshold && !inCheck && !isCurrentNodePv {
 		currentPositionStaticEvaluation := evaluator.EvaluatePosition(&searcher.position)
 		boost := FutilityBoosts[depth]
 		futilityPruningPossibility = currentPositionStaticEvaluation+boost <= alpha
 	}
 
-	if depth >= InternalIterativeDeepeningDepthLowerBound && (isCurrentNodePv || transpostionTableEntry.GetEntryType() == LowerBoundEntryType) && transpostionTableMove.IsSameMove(NullMove) {
-		searcher.Negamax(evaluator, depth-InternalIterativeDeepeningReductionAmount-1, ply+1, -beta, -alpha, &continuationPv, true, NullMove, NullMove, singularMoveExtendedSearch)
-		if len(continuationPv.moves) > 0 {
-			transpostionTableMove = continuationPv.GetVariationFirstMove()
-			continuationPv.DeleteVariation()
-		}
-	}
-
-	pseudoLegalMoves := generatePseudoLegalMoves(&searcher.position)
-	searcher.AssignScoresToMoves(&pseudoLegalMoves, transpostionTableMove, ply, previousMove)
+	pseudoLegalMoves := chessEngine.GeneratePseudoLegalMoves(&searcher.position)
+	searcher.AssignScoresToMoves(&pseudoLegalMoves, ply, previousMove)
 
 	legalMoveCount := 0
-	transpositionTableEntryType := UpperBoundEntryType
-	highestScore := -CheckmateScore
-	bestMove := NullMove
+	highestScore := -chessEngine.CheckmateScore
 
 	for i := uint8(0); i < pseudoLegalMoves.Size; i++ {
 		OrderHighestScoredMove(i, &pseudoLegalMoves)
@@ -470,13 +384,13 @@ func (searcher *DefaultSearcher) Negamax(evaluator Evaluator, depth int8, ply ui
 		legalMoveCount++
 
 		if depth <= LateMovePruningDepthUpperBound && legalMoveCount > LateMovePruningLegalMoveLowerBounds[depth] && !inCheck && !isCurrentNodePv {
-			if !(searcher.position.IsCurrentSideInCheck() || currentMove.GetMoveType() == PromotionMoveType) {
+			if !(searcher.position.IsCurrentSideInCheck() || currentMove.GetMoveType() == chessEngine.PromotionMoveType) {
 				searcher.position.UnDoPreviousMove(currentMove, evaluator)
 				continue
 			}
 		}
 
-		if futilityPruningPossibility && legalMoveCount > FutilityPruningLegalMovesLowerBound && currentMove.GetMoveType() != CaptureMoveType && currentMove.GetMoveType() != PromotionMoveType && !searcher.position.IsCurrentSideInCheck() {
+		if futilityPruningPossibility && legalMoveCount > FutilityPruningLegalMovesLowerBound && currentMove.GetMoveType() != chessEngine.CaptureMoveType && currentMove.GetMoveType() != chessEngine.PromotionMoveType && !searcher.position.IsCurrentSideInCheck() {
 			searcher.position.UnDoPreviousMove(currentMove, evaluator)
 			continue
 		}
@@ -487,41 +401,22 @@ func (searcher *DefaultSearcher) Negamax(evaluator Evaluator, depth int8, ply ui
 		if legalMoveCount == 1 {
 			effectiveDepth := depth - 1
 
-			if !singularMoveExtendedSearch &&
-				depth >= SingularExtensionDepthLowerBound &&
-				transpostionTableMove.IsSameMove(currentMove) &&
-				(transpostionTableEntry.GetEntryType() == ExactEntryType || transpostionTableEntry.GetEntryType() == LowerBoundEntryType) &&
-				isCurrentNodePv && transpositionTableHashMatch {
-				searcher.position.UnDoPreviousMove(currentMove, evaluator)
-				searcher.EraseLatestPositionHash()
-
-				penalizedScore := transpostionTableScore - SingularMoveExtensionPenalty
-				reductionAmount := 3 + depth/6
-
-				reducedSearchScore := searcher.Negamax(evaluator, depth-1-reductionAmount, ply+1, penalizedScore, penalizedScore+1, &PV{}, true, previousMove, currentMove, true)
-				if reducedSearchScore <= penalizedScore {
-					effectiveDepth += SignularMoveExtensionAmount
-				}
-
-				searcher.position.DoMove(currentMove, evaluator)
-				searcher.RecordPositionHash(searcher.position.PositionHash)
-			}
-			score = -searcher.Negamax(evaluator, effectiveDepth, ply+1, -beta, -alpha, &continuationPv, true, currentMove, NullMove, singularMoveExtendedSearch)
+			score = -searcher.Negamax(evaluator, effectiveDepth, ply+1, -beta, -alpha, &continuationPv, true, currentMove, chessEngine.NullMove, singularMoveExtendedSearch)
 		} else {
 			reductionAmount := int8(0)
-			if legalMoveCount >= LateMoveReductionLegalMoveLowerBound && depth >= LateMoveReductionDepthLowerBound && !(inCheck || currentMove.GetMoveType() == CaptureMoveType) && !isCurrentNodePv {
+			if legalMoveCount >= LateMoveReductionLegalMoveLowerBound && depth >= LateMoveReductionDepthLowerBound && !(inCheck || currentMove.GetMoveType() == chessEngine.CaptureMoveType) && !isCurrentNodePv {
 				reductionAmount = LateMoveReductions[depth][legalMoveCount]
 			}
 
-			score = -searcher.Negamax(evaluator, depth-1-reductionAmount, ply+1, -(alpha + 1), -alpha, &continuationPv, true, currentMove, NullMove, singularMoveExtendedSearch)
+			score = -searcher.Negamax(evaluator, depth-1-reductionAmount, ply+1, -(alpha + 1), -alpha, &continuationPv, true, currentMove, chessEngine.NullMove, singularMoveExtendedSearch)
 
 			if score > alpha && reductionAmount > 0 {
-				score = -searcher.Negamax(evaluator, depth-1, ply+1, -(alpha + 1), -alpha, &continuationPv, true, currentMove, NullMove, singularMoveExtendedSearch)
+				score = -searcher.Negamax(evaluator, depth-1, ply+1, -(alpha + 1), -alpha, &continuationPv, true, currentMove, chessEngine.NullMove, singularMoveExtendedSearch)
 				if score > alpha {
-					score = -searcher.Negamax(evaluator, depth-1, ply+1, -beta, -alpha, &continuationPv, true, currentMove, NullMove, singularMoveExtendedSearch)
+					score = -searcher.Negamax(evaluator, depth-1, ply+1, -beta, -alpha, &continuationPv, true, currentMove, chessEngine.NullMove, singularMoveExtendedSearch)
 				}
 			} else if score > alpha && score < beta {
-				score = -searcher.Negamax(evaluator, depth-1, ply+1, -beta, -alpha, &continuationPv, true, currentMove, NullMove, singularMoveExtendedSearch)
+				score = -searcher.Negamax(evaluator, depth-1, ply+1, -beta, -alpha, &continuationPv, true, currentMove, chessEngine.NullMove, singularMoveExtendedSearch)
 			}
 		}
 
@@ -530,11 +425,9 @@ func (searcher *DefaultSearcher) Negamax(evaluator Evaluator, depth int8, ply ui
 
 		if score > highestScore {
 			highestScore = score
-			bestMove = currentMove
 		}
 
 		if score >= beta {
-			transpositionTableEntryType = LowerBoundEntryType
 			searcher.ChangeKillerMoveSlot(ply, currentMove)
 			searcher.ChangeCounterMoveSlot(previousMove, currentMove)
 			searcher.IncreaseMoveHistoryStrength(currentMove, depth)
@@ -545,7 +438,6 @@ func (searcher *DefaultSearcher) Negamax(evaluator Evaluator, depth int8, ply ui
 
 		if score > alpha {
 			alpha = score
-			transpositionTableEntryType = ExactEntryType
 			pv.SetNewVariation(currentMove, continuationPv)
 			searcher.IncreaseMoveHistoryStrength(currentMove, depth)
 		} else {
@@ -556,93 +448,16 @@ func (searcher *DefaultSearcher) Negamax(evaluator Evaluator, depth int8, ply ui
 
 	if legalMoveCount == 0 {
 		if inCheck {
-			return -CheckmateScore + int16(ply)
+			return -chessEngine.CheckmateScore + int16(ply)
 		}
 		return drawScore
 	}
 
-	if !searcher.timeManager.endSearch {
-		tableEntry := searcher.transpositionTable.GetEntryToReplace(searcher.position.PositionHash, uint8(depth), searcher.ageState)
-		tableEntry.ModifyTableEntry(bestMove, highestScore, searcher.position.PositionHash, ply, uint8(depth), transpositionTableEntryType, searcher.ageState)
-	}
-
 	return highestScore
 }
 
-func (searcher *DefaultSearcher) QuiescenceSearch(evaluator Evaluator, alpha int16, beta int16, maximumAllowablePly uint8, pv *PV, ply uint8) int16 {
-	searcher.searchedNodes++
-	if maximumAllowablePly+ply >= MaxDepth {
-		return evaluator.EvaluatePosition(&searcher.position)
-	}
-	if searcher.searchedNodes >= searcher.timeManager.nodeCount {
-		searcher.timeManager.endSearch = true
-	}
-	if searcher.searchedNodes&2047 == 0 {
-		searcher.timeManager.SetMoveTimeIsUp()
-	}
-	if searcher.timeManager.endSearch {
-		return 0
-	}
-
-	highestScore := evaluator.EvaluatePosition(&searcher.position)
-	inCheck := ply <= 2 && searcher.position.IsCurrentSideInCheck()
-
-	if highestScore >= beta && !inCheck {
-		return highestScore
-	}
-
-	if highestScore > alpha {
-		alpha = highestScore
-	}
-
-	pseudoLegalMoves := MoveList{}
-
-	if inCheck {
-		pseudoLegalMoves = generatePseudoLegalMoves(&searcher.position)
-	} else {
-		pseudoLegalMoves = generatePseudoLegalCapturesAndPromotionsToQueens(&searcher.position)
-	}
-
-	searcher.AssignScoresToMoves(&pseudoLegalMoves, NullMove, maximumAllowablePly, NullMove)
-	continuationPv := PV{}
-
-	for i := uint8(0); i < pseudoLegalMoves.Size; i++ {
-		OrderHighestScoredMove(i, &pseudoLegalMoves)
-		currentMove := pseudoLegalMoves.Moves[i]
-		staticExchangeEvaluationResult := searcher.position.See(currentMove)
-
-		if staticExchangeEvaluationResult < 0 {
-			continue
-		}
-
-		if !searcher.position.DoMove(currentMove, evaluator) {
-			searcher.position.UnDoPreviousMove(currentMove, evaluator)
-			continue
-		}
-
-		score := -searcher.QuiescenceSearch(evaluator, -beta, -alpha, maximumAllowablePly, &continuationPv, ply+1)
-		searcher.position.UnDoPreviousMove(currentMove, evaluator)
-
-		if score > highestScore {
-			highestScore = score
-		}
-
-		if score >= beta {
-			break
-		}
-		if score > alpha {
-			alpha = score
-			pv.SetNewVariation(currentMove, continuationPv)
-		}
-
-		continuationPv.DeleteVariation()
-	}
-
-	return highestScore
-}
-
-func (searcher *DefaultSearcher) CleanUp() {
-	searcher.transpositionTable.DeleteEntries()
+func (searcher *CustomSearcher) CleanUp() {
+	return
 }
 
 func abs[Int constraints.Integer](n Int) Int {
@@ -650,4 +465,11 @@ func abs[Int constraints.Integer](n Int) Int {
 		return -n
 	}
 	return n
+}
+
+func max[Int constraints.Integer](a, b Int) Int {
+	if a > b {
+		return a
+	}
+	return b
 }
