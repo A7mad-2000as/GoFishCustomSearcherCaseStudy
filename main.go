@@ -5,6 +5,8 @@ import (
 )
 
 func main() {
+	InitializeLateMoveReductions()
+	chessEngine.InitEvaluationRelatedMasks()
 	engineInterface := chessEngine.NewCustomEngineInterface(&CustomSearcher{}, &chessEngine.DefaultEvaluator{})
 	engineInterface.StartEngine()
 }
