@@ -8,4 +8,4 @@ For demonstration purposes, the custom search implementaion simply copies the de
 4. Quiscensce Search
 5. Internal Iterative Deepining
 
-This will naturlly make this custom engine less powerful than the default implementation of GoFish.
+This will naturally make this custom engine less powerful than the default implementation of GoFish.
